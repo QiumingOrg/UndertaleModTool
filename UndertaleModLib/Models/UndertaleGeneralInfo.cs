@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using UndertaleModLib.Compiler;
@@ -10,9 +11,10 @@ namespace UndertaleModLib.Models;
 /// <summary>
 /// General info about a data file.
 /// </summary>
-[PropertyChanged.AddINotifyPropertyChangedInterface]
+//[PropertyChanged.AddINotifyPropertyChangedInterface]
 public class UndertaleGeneralInfo : UndertaleObject, IDisposable
 {
+    public event PropertyChangedEventHandler PropertyChanged;
     /// <summary>
     /// Information flags a data file can use.
     /// </summary>
