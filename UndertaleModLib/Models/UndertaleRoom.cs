@@ -940,6 +940,26 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
         private readonly UndertaleResourceById<UndertaleCode, UndertaleChunkCODE> _creationCode = new();
         private readonly UndertaleResourceById<UndertaleCode, UndertaleChunkCODE> _preCreateCode = new();
         private FloatAsInt _rotation;
+        
+        public GameObject Clone()
+        {
+            return new()
+            {
+                X = this.X,
+                Y = this.Y,
+                ObjectDefinition = this.ObjectDefinition,
+                InstanceID = this.InstanceID,
+                CreationCode = this.CreationCode,
+                ScaleX = this.ScaleX,
+                ScaleY = this.ScaleY,
+                Color = this.Color,
+                Rotation = this.Rotation,
+                PreCreateCode = this.PreCreateCode,
+                ImageSpeed = this.ImageSpeed,
+                ImageIndex = this.ImageIndex,
+                Nonexistent = this.Nonexistent,
+            };
+        }
 
         /// <summary>
         /// The x coordinate of this object.
@@ -1388,7 +1408,7 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
         public interface LayerData : UndertaleObject, IDisposable
         {
         }
-
+        
         private UndertaleRoom _parentRoom;
         private int _layerDepth;
 
@@ -2064,6 +2084,23 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
             public UndertalePointerList<SpriteInstance> NineSlices { get; set; } // Removed in 2.3.2, before never used
             public UndertalePointerList<ParticleSystemInstance> ParticleSystems { get; set; }
             public UndertalePointerList<TextItemInstance> TextItems { get; set; }
+            public List<object> AllAssets { get; set; } = new List<object>();
+            public void InitializeAllAssets()
+            {
+                AllAssets.Clear();
+                if (LegacyTiles != null)
+                    AllAssets.Add(LegacyTiles);
+                if (Sprites != null)
+                    AllAssets.Add(Sprites);
+                if (Sequences != null)
+                    AllAssets.Add(Sequences);
+                if (NineSlices != null)
+                    AllAssets.Add(NineSlices);
+                if (ParticleSystems != null)
+                    AllAssets.Add(ParticleSystems);
+                if (TextItems != null)
+                    AllAssets.Add(TextItems);
+            }
 
             /// <inheritdoc />
             public void Serialize(UndertaleWriter writer)
@@ -2127,6 +2164,7 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
                     if (reader.undertaleData.IsVersionAtLeast(2024, 6))
                         reader.ReadUndertaleObject(TextItems);
                 }
+                InitializeAllAssets();
             }
 
             /// <inheritdoc cref="UndertaleObject.UnserializeChildObjectCount(UndertaleReader)"/>
@@ -2522,8 +2560,11 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
         }
     }
 
-    public class ParticleSystemInstance : UndertaleObject, INotifyPropertyChanged, IDisposable
+    public class ParticleSystemInstance : UndertaleObject, INotifyPropertyChanged, IStaticChildObjCount, IStaticChildObjectsSize, IDisposable
     {
+        /// <inheritdoc cref="IStaticChildObjectsSize.ChildObjectsSize" />
+        public static readonly uint ChildObjectsSize = 32;
+
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null)
         {
@@ -2634,8 +2675,11 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
         }
     }
 
-    public class TextItemInstance : UndertaleObject, INotifyPropertyChanged, IDisposable
+    public class TextItemInstance : UndertaleObject, INotifyPropertyChanged, IStaticChildObjCount, IStaticChildObjectsSize, IDisposable
     {
+        /// <inheritdoc cref="IStaticChildObjectsSize.ChildObjectsSize" />
+        public static readonly uint ChildObjectsSize = 68;
+
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null)
         {
@@ -2796,6 +2840,7 @@ public class UndertaleRoom : UndertaleNamedResource, INotifyPropertyChanged, IDi
             }
         }
     }
+    
 }
 
 public enum AnimationSpeedType : uint

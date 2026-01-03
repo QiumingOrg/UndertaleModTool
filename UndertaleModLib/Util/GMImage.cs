@@ -1,8 +1,10 @@
-﻿using System;
+﻿using ICSharpCode.SharpZipLib.BZip2;
+using ImageMagick;
+using System;
 using System.Buffers.Binary;
 using System.IO;
-using ICSharpCode.SharpZipLib.BZip2;
-using ImageMagick;
+using System.Runtime.InteropServices;
+using SkiaSharp;
 
 namespace UndertaleModLib.Util;
 
@@ -876,6 +878,41 @@ public class GMImage
     }
 
     /// <summary>
+    /// Returns the image data in the current format.
+    /// </summary>
+    public byte[] GetData()
+    {
+        return _data;
+    }
+
+    public SKImage GetSkiaImage()
+    {
+        // Faster shortcut
+        if (Format == GMImage.ImageFormat.Png)
+        {
+            return SKImage.FromEncodedData(GetData());
+        }
+        //return gmImage.ConvertToRawBgra().GetSkiaImage();
+        byte[] data = ConvertToRawBgra().GetData();
+        GCHandle gcHandle = GCHandle.Alloc(data, GCHandleType.Pinned);
+        
+        SKBitmap bitmap = new();
+        
+        SKImageInfo info = new(Width, Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+        SKPixmap pixmap = new(info, gcHandle.AddrOfPinnedObject(), info.RowBytes);
+        SKImage? image = SKImage.FromPixels(pixmap, delegate
+            { gcHandle.Free(); });
+        
+        if (image is null)
+        {
+            gcHandle.Free();
+            throw new Exception("Could not create image");
+        }
+        
+        return image;
+    }
+
+    /// <summary>
     /// Writes this image, in its current format (as seen on disk), to the current position of the specified <see cref="BinaryWriter"/>.
     /// </summary>
     /// <remarks>The gm2022_5 parameter is only relevant for images of BZ2 + QOI format.</remarks>
@@ -1005,5 +1042,11 @@ public class GMImage
         image.Depth = 8;
         image.SetCompression(CompressionMethod.NoCompression);
         return new GMImage(ImageFormat.RawBgra, (int)image.Width, (int)image.Height, image.ToByteArray());
+    }
+    
+    public static GMImage FromSkiaImage(SKImage image)
+    {
+        SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return new GMImage(ImageFormat.RawBgra, (int)image.Width, (int)image.Height, data.ToArray());
     }
 }

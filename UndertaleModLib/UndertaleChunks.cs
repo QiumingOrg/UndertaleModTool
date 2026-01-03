@@ -202,7 +202,7 @@ namespace UndertaleModLib
             return totalCount;
         }
     }
-
+    
     public class UndertaleChunkGEN8 : UndertaleSingleChunk<UndertaleGeneralInfo>
     {
         public override string Name => "GEN8";
@@ -1179,7 +1179,7 @@ namespace UndertaleModLib
         {
             checkedFor2024_14 = true;
 
-            if (!reader.undertaleData.IsVersionAtLeast(2024, 13) || reader.undertaleData.IsVersionAtLeast(2024, 14))
+            if (!reader.undertaleData.IsVersionAtLeast(2024, 13))// || reader.undertaleData.IsVersionAtLeast(2024, 14))
             {
                 return;
             }
