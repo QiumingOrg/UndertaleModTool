@@ -4,6 +4,7 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.Runtime.InteropServices;
+using Pfim;
 using SkiaSharp;
 
 namespace UndertaleModLib.Util;
@@ -112,6 +113,7 @@ public class GMImage
         {
             throw new ArgumentOutOfRangeException(nameof(width));
         }
+
         if (height is < 0 or > MaxImageDimension)
         {
             throw new ArgumentOutOfRangeException(nameof(height));
@@ -225,7 +227,8 @@ public class GMImage
     /// <summary>
     /// Finds the end position of a BZ2 stream exactly, given the start and end bounds of the data.
     /// </summary>
-    private static long FindEndOfBZ2Stream(IBinaryReader reader, long startOfStreamPosition, long maxEndOfStreamPosition)
+    private static long FindEndOfBZ2Stream(IBinaryReader reader, long startOfStreamPosition,
+        long maxEndOfStreamPosition)
     {
         if (startOfStreamPosition >= maxEndOfStreamPosition)
         {
@@ -259,8 +262,7 @@ public class GMImage
 
             // Move backwards to next chunk
             chunkStartPosition = Math.Max(startOfStreamPosition, chunkStartPosition - maxChunkSize);
-        }
-        while (chunkStartPosition > startOfStreamPosition);
+        } while (chunkStartPosition > startOfStreamPosition);
 
         throw new IOException("Failed to find nonzero data");
     }
@@ -433,6 +435,7 @@ public class GMImage
         {
             throw new InvalidDataException("PNG data is too short");
         }
+
         ReadOnlySpan<byte> span = data.AsSpan();
 
         // Verify header, if requested
@@ -450,6 +453,7 @@ public class GMImage
         {
             throw new InvalidDataException($"Width out of range ({width})");
         }
+
         if (height is < 0 or > MaxImageDimension)
         {
             throw new InvalidDataException($"Height out of range ({height})");
@@ -476,6 +480,7 @@ public class GMImage
         {
             throw new InvalidDataException($"Width out of range ({width})");
         }
+
         if (height is < 0 or > MaxImageDimension)
         {
             throw new InvalidDataException($"Height out of range ({height})");
@@ -510,6 +515,7 @@ public class GMImage
         {
             throw new InvalidDataException($"Width out of range ({width})");
         }
+
         if (height is < 0 or > MaxImageDimension)
         {
             throw new InvalidDataException($"Height out of range ({height})");
@@ -577,59 +583,121 @@ public class GMImage
         switch (Format)
         {
             case ImageFormat.RawBgra:
-                {
-                    // Create image using ImageMagick, and save it as PNG format
-                    using var image = new MagickImage(_data, GetMagickRawToPngSettings());
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Png32;
-                    image.Write(stream);
-                    break;
-                }
+            {
+                // Create image using ImageMagick, and save it as PNG format
+                using var image = new MagickImage(_data, GetMagickRawToPngSettings());
+                image.Alpha(AlphaOption.Set);
+                image.Format = MagickFormat.Png32;
+                image.Write(stream);
+                break;
+            }
             case ImageFormat.Png:
-                {
-                    // Data is already encoded as PNG; just use that
-                    stream.Write(_data);
-                    break;
-                }
+            {
+                // Data is already encoded as PNG; just use that
+                stream.Write(_data);
+                break;
+            }
             case ImageFormat.Qoi:
-                {
-                    // Convert to raw image data, and then save that to a PNG
-                    GMImage rawImage = QoiConverter.GetImageFromSpan(_data);
-                    rawImage.SavePng(stream);
-                    break;
-                }
+            {
+                // Convert to raw image data, and then save that to a PNG
+                GMImage rawImage = QoiConverter.GetImageFromSpan(_data);
+                rawImage.SavePng(stream);
+                break;
+            }
             case ImageFormat.Bz2Qoi:
-                {
-                    GMImage rawImage;
-                    
-                    using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
-                    {
-                        // Decompress BZ2 data
-                        using (MemoryStream compressedData = new(_data))
-                        {
-                            BZip2.Decompress(compressedData, uncompressedData, false);
-                        }
+            {
+                GMImage rawImage;
 
-                        // Convert to raw image data
-                        uncompressedData.Seek(0, SeekOrigin.Begin);
-                        rawImage = QoiConverter.GetImageFromStream(uncompressedData);
+                using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
+                {
+                    // Decompress BZ2 data
+                    using (MemoryStream compressedData = new(_data))
+                    {
+                        BZip2.Decompress(compressedData, uncompressedData, false);
                     }
 
-                    // Save raw image to PNG
-                    rawImage.SavePng(stream);
-                    break;
+                    // Convert to raw image data
+                    uncompressedData.Seek(0, SeekOrigin.Begin);
+                    rawImage = QoiConverter.GetImageFromStream(uncompressedData);
                 }
+
+                // Save raw image to PNG
+                rawImage.SavePng(stream);
+                break;
+            }
             case ImageFormat.Dds:
-                {
-                    // Create image using ImageMagick, and save it as PNG format
-                    using var image = new MagickImage(_data, GetMagickDdsToPngSettings());
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Png32;
-                    image.Write(stream);
-                    break;
-                }
+            {
+                ConvertDdsToPng(stream);
+                // using var image = new MagickImage(_data, GetMagickDdsToPngSettings());
+                // image.Alpha(AlphaOption.Set);
+                // image.Format = MagickFormat.Png32;
+                // image.Write(stream);
+                break;
+            }
             default:
                 throw new InvalidOperationException($"Unknown format {Format}");
+        }
+    }
+
+    public void ConvertDdsToPng(Stream stream1)
+    {
+        SKColorType colorType;
+        using (var stream = new MemoryStream(_data, false))
+        using (var image = Pfimage.FromStream(stream))
+        {
+            var newData = image.Data;
+            var newDataLen = image.DataLen;
+            var stride = image.Stride;
+            switch (image.Format)
+            {
+                case Pfim.ImageFormat.Rgb8:
+                    colorType = SKColorType.Gray8;
+                    break;
+                case Pfim.ImageFormat.R5g6b5:
+                    // color channels still need to be swapped
+                    colorType = SKColorType.Rgb565;
+                    break;
+                case Pfim.ImageFormat.Rgba16:
+                    // color channels still need to be swapped
+                    colorType = SKColorType.Argb4444;
+                    break;
+                case Pfim.ImageFormat.Rgb24:
+                    // Skia has no 24bit pixels, so we upscale to 32bit
+                    var pixels = image.DataLen / 3;
+                    newDataLen = pixels * 4;
+                    newData = new byte[newDataLen];
+                    for (int i = 0; i < pixels; i++)
+                    {
+                        newData[i * 4] = image.Data[i * 3];
+                        newData[i * 4 + 1] = image.Data[i * 3 + 1];
+                        newData[i * 4 + 2] = image.Data[i * 3 + 2];
+                        newData[i * 4 + 3] = 255;
+                    }
+
+                    stride = image.Width * 4;
+                    colorType = SKColorType.Bgra8888;
+                    break;
+                case Pfim.ImageFormat.Rgba32:
+                    colorType = SKColorType.Bgra8888;
+                    break;
+                default:
+                    throw new ArgumentException($"Skia unable to interpret pfim format: {image.Format}");
+            }
+
+            var imageInfo = new SKImageInfo(image.Width, image.Height, colorType);
+            var handle = GCHandle.Alloc(newData, GCHandleType.Pinned);
+            var ptr = Marshal.UnsafeAddrOfPinnedArrayElement(newData, 0);
+            using (var data = SKData.Create(ptr, newDataLen, (address, context) => handle.Free()))
+            using (var skImage = SKImage.FromPixels(imageInfo, data, stride))
+            using (var bitmap = SKBitmap.FromImage(skImage))
+            using (var wstream = new SKManagedWStream(stream1))
+            {
+                var success = bitmap.Encode(wstream, SKEncodedImageFormat.Png, 95);
+                if (!success) throw new Exception($"Image converted successfully");
+                //Console.WriteLine(success ? "Image converted successfully" : "Image unsuccessful");
+            }
+
+            stream.Close();
         }
     }
 
@@ -659,41 +727,41 @@ public class GMImage
         switch (Format)
         {
             case ImageFormat.RawBgra:
-                {
-                    // Already in correct format; no conversion to be done
-                    return this;
-                }
+            {
+                // Already in correct format; no conversion to be done
+                return this;
+            }
             case ImageFormat.Png:
             case ImageFormat.Dds:
-                {
-                    // Convert image to raw byte array
-                    var image = new MagickImage(_data);
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Bgra;
-                    image.Depth = 8;
-                    image.SetCompression(CompressionMethod.NoCompression);
-                    return new GMImage(ImageFormat.RawBgra, Width, Height, image.ToByteArray());
-                }
+            {
+                // Convert image to raw byte array
+                var image = new MagickImage(_data);
+                image.Alpha(AlphaOption.Set);
+                image.Format = MagickFormat.Bgra;
+                image.Depth = 8;
+                image.SetCompression(CompressionMethod.NoCompression);
+                return new GMImage(ImageFormat.RawBgra, Width, Height, image.ToByteArray());
+            }
             case ImageFormat.Qoi:
-                {
-                    // Convert to raw image data
-                    return QoiConverter.GetImageFromSpan(_data);
-                }
+            {
+                // Convert to raw image data
+                return QoiConverter.GetImageFromSpan(_data);
+            }
             case ImageFormat.Bz2Qoi:
+            {
+                using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
                 {
-                    using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
+                    // Decompress BZ2 data
+                    using (MemoryStream compressedData = new(_data))
                     {
-                        // Decompress BZ2 data
-                        using (MemoryStream compressedData = new(_data))
-                        {
-                            BZip2.Decompress(compressedData, uncompressedData, false);
-                        }
-
-                        // Convert to raw image data
-                        uncompressedData.Seek(0, SeekOrigin.Begin);
-                        return QoiConverter.GetImageFromStream(uncompressedData);
+                        BZip2.Decompress(compressedData, uncompressedData, false);
                     }
+
+                    // Convert to raw image data
+                    uncompressedData.Seek(0, SeekOrigin.Begin);
+                    return QoiConverter.GetImageFromStream(uncompressedData);
                 }
+            }
         }
 
         throw new InvalidOperationException($"Unknown source format {Format}");
@@ -707,52 +775,52 @@ public class GMImage
         switch (Format)
         {
             case ImageFormat.RawBgra:
-                {
-                    // Create image using ImageMagick, and convert it to PNG format
-                    using var image = new MagickImage(_data, GetMagickRawToPngSettings());
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Png32;
-                    return new GMImage(ImageFormat.Png, Width, Height, image.ToByteArray());
-                }
+            {
+                // Create image using ImageMagick, and convert it to PNG format
+                using var image = new MagickImage(_data, GetMagickRawToPngSettings());
+                image.Alpha(AlphaOption.Set);
+                image.Format = MagickFormat.Png32;
+                return new GMImage(ImageFormat.Png, Width, Height, image.ToByteArray());
+            }
             case ImageFormat.Png:
-                {
-                    // Already in correct format; no conversion to be done
-                    return this;
-                }
+            {
+                // Already in correct format; no conversion to be done
+                return this;
+            }
             case ImageFormat.Qoi:
-                {
-                    // Convert to raw image data, and then convert that to a PNG
-                    GMImage rawImage = QoiConverter.GetImageFromSpan(_data);
-                    return rawImage.ConvertToPng();
-                }
+            {
+                // Convert to raw image data, and then convert that to a PNG
+                GMImage rawImage = QoiConverter.GetImageFromSpan(_data);
+                return rawImage.ConvertToPng();
+            }
             case ImageFormat.Bz2Qoi:
+            {
+                GMImage rawImage;
+
+                using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
                 {
-                    GMImage rawImage;
-
-                    using (MemoryStream uncompressedData = new(GetInitialUncompressedBufferCapacity()))
+                    // Decompress BZ2 data
+                    using (MemoryStream compressedData = new(_data))
                     {
-                        // Decompress BZ2 data
-                        using (MemoryStream compressedData = new(_data))
-                        {
-                            BZip2.Decompress(compressedData, uncompressedData, false);
-                        }
-
-                        // Convert to raw image data
-                        uncompressedData.Seek(0, SeekOrigin.Begin);
-                        rawImage = QoiConverter.GetImageFromStream(uncompressedData);
+                        BZip2.Decompress(compressedData, uncompressedData, false);
                     }
 
-                    // Convert raw image to PNG
-                    return rawImage.ConvertToPng();
+                    // Convert to raw image data
+                    uncompressedData.Seek(0, SeekOrigin.Begin);
+                    rawImage = QoiConverter.GetImageFromStream(uncompressedData);
                 }
+
+                // Convert raw image to PNG
+                return rawImage.ConvertToPng();
+            }
             case ImageFormat.Dds:
-                {
-                    // Create image using ImageMagick, and convert it to PNG format
-                    using var image = new MagickImage(_data, GetMagickDdsToPngSettings());
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Png32;
-                    return new GMImage(ImageFormat.Png, Width, Height, image.ToByteArray());
-                }
+            {
+                // Create image using ImageMagick, and convert it to PNG format
+                using var image = new MagickImage(_data, GetMagickDdsToPngSettings());
+                image.Alpha(AlphaOption.Set);
+                image.Format = MagickFormat.Png32;
+                return new GMImage(ImageFormat.Png, Width, Height, image.ToByteArray());
+            }
         }
 
         throw new InvalidOperationException($"Unknown source format {Format}");
@@ -769,15 +837,15 @@ public class GMImage
             case ImageFormat.Png:
             case ImageFormat.Bz2Qoi:
             case ImageFormat.Dds:
-                {
-                    // Encode image as QOI
-                    return new GMImage(ImageFormat.Qoi, Width, Height, QoiConverter.GetArrayFromImage(this));
-                }
+            {
+                // Encode image as QOI
+                return new GMImage(ImageFormat.Qoi, Width, Height, QoiConverter.GetArrayFromImage(this));
+            }
             case ImageFormat.Qoi:
-                {
-                    // Already in correct format; no conversion to be done
-                    return this;
-                }
+            {
+                // Already in correct format; no conversion to be done
+                return this;
+            }
         }
 
         throw new InvalidOperationException($"Unknown source format {Format}");
@@ -800,6 +868,7 @@ public class GMImage
                 // Ensure shared stream is at the beginning
                 sharedStream.Seek(0, SeekOrigin.Begin);
             }
+
             BZip2.Compress(input, sharedStream, false, 9);
             compressed = sharedStream.GetBuffer().AsSpan()[..(int)sharedStream.Position].ToArray();
         }
@@ -829,21 +898,21 @@ public class GMImage
             case ImageFormat.RawBgra:
             case ImageFormat.Png:
             case ImageFormat.Dds:
-                {
-                    // Encode image as QOI, first
-                    byte[] data = QoiConverter.GetArrayFromImage(this);
-                    return CompressQoiData(Width, Height, data, sharedStream);
-                }
+            {
+                // Encode image as QOI, first
+                byte[] data = QoiConverter.GetArrayFromImage(this);
+                return CompressQoiData(Width, Height, data, sharedStream);
+            }
             case ImageFormat.Qoi:
-                {
-                    // Already have QOI data, so just compress it
-                    return CompressQoiData(Width, Height, _data, sharedStream);
-                }
+            {
+                // Already have QOI data, so just compress it
+                return CompressQoiData(Width, Height, _data, sharedStream);
+            }
             case ImageFormat.Bz2Qoi:
-                {
-                    // Already in correct format; no conversion to be done
-                    return this;
-                }
+            {
+                // Already in correct format; no conversion to be done
+                return this;
+            }
         }
 
         throw new InvalidOperationException($"Unknown source format {Format}");
@@ -887,29 +956,7 @@ public class GMImage
 
     public SKImage GetSkiaImage()
     {
-        // Faster shortcut
-        if (Format == GMImage.ImageFormat.Png)
-        {
-            return SKImage.FromEncodedData(GetData());
-        }
-        //return gmImage.ConvertToRawBgra().GetSkiaImage();
-        byte[] data = ConvertToRawBgra().GetData();
-        GCHandle gcHandle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        
-        SKBitmap bitmap = new();
-        
-        SKImageInfo info = new(Width, Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
-        SKPixmap pixmap = new(info, gcHandle.AddrOfPinnedObject(), info.RowBytes);
-        SKImage? image = SKImage.FromPixels(pixmap, delegate
-            { gcHandle.Free(); });
-        
-        if (image is null)
-        {
-            gcHandle.Free();
-            throw new Exception("Could not create image");
-        }
-        
-        return image;
+        return SKImage.FromEncodedData(_data);
     }
 
     /// <summary>
@@ -940,8 +987,10 @@ public class GMImage
                     {
                         throw new InvalidOperationException("BZ2 uncompressed data size was not set");
                     }
+
                     writer.Write(_bz2UncompressedSize);
                 }
+
                 writer.Write(_data);
                 break;
             default:
@@ -982,49 +1031,49 @@ public class GMImage
         switch (Format)
         {
             case ImageFormat.Png:
+            {
+                // Parse the PNG data
+                MagickReadSettings settings = new()
                 {
-                    // Parse the PNG data
-                    MagickReadSettings settings = new()
-                    {
-                        ColorSpace = ColorSpace.sRGB,
-                        Format = MagickFormat.Png
-                    };
-                    MagickImage image = new(_data, settings);
-                    image.Alpha(AlphaOption.Set);
-                    image.Format = MagickFormat.Bgra;
-                    image.Depth = 8;
-                    image.SetCompression(CompressionMethod.NoCompression);
-                    return image;
-                }
+                    ColorSpace = ColorSpace.sRGB,
+                    Format = MagickFormat.Png
+                };
+                MagickImage image = new(_data, settings);
+                image.Alpha(AlphaOption.Set);
+                image.Format = MagickFormat.Bgra;
+                image.Depth = 8;
+                image.SetCompression(CompressionMethod.NoCompression);
+                return image;
+            }
             case ImageFormat.RawBgra:
+            {
+                // Parse the raw data
+                MagickReadSettings settings = new()
                 {
-                    // Parse the raw data
-                    MagickReadSettings settings = new()
-                    {
-                        Width = (uint)Width,
-                        Height = (uint)Height,
-                        Format = MagickFormat.Bgra,
-                        Depth = 8,
-                        Compression = CompressionMethod.NoCompression
-                    };
-                    MagickImage image = new(_data, settings);
-                    image.Alpha(AlphaOption.Set);
-                    return image;
-                }
+                    Width = (uint)Width,
+                    Height = (uint)Height,
+                    Format = MagickFormat.Bgra,
+                    Depth = 8,
+                    Compression = CompressionMethod.NoCompression
+                };
+                MagickImage image = new(_data, settings);
+                image.Alpha(AlphaOption.Set);
+                return image;
+            }
             case ImageFormat.Qoi:
             case ImageFormat.Bz2Qoi:
                 // Convert to raw data, then parse that
                 return ConvertToRawBgra().GetMagickImage();
             case ImageFormat.Dds:
+            {
+                // Parse the DDS data
+                MagickReadSettings settings = new()
                 {
-                    // Parse the DDS data
-                    MagickReadSettings settings = new()
-                    {
-                        Format = MagickFormat.Dds
-                    };
-                    MagickImage image = new(_data, settings);
-                    return image;
-                }
+                    Format = MagickFormat.Dds
+                };
+                MagickImage image = new(_data, settings);
+                return image;
+            }
         }
 
         throw new InvalidOperationException($"Unknown format {Format}");
@@ -1043,7 +1092,7 @@ public class GMImage
         image.SetCompression(CompressionMethod.NoCompression);
         return new GMImage(ImageFormat.RawBgra, (int)image.Width, (int)image.Height, image.ToByteArray());
     }
-    
+
     public static GMImage FromSkiaImage(SKImage image)
     {
         SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
