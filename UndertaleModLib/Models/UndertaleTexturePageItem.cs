@@ -184,8 +184,7 @@ public class UndertaleTexturePageItem : UndertaleNamedResource, INotifyPropertyC
             canvas.DrawBitmap(finalBmp, SourceX, SourceY);
 
             // 4. 将修改后的纹理页重新写回 GMImage（保持原始格式）
-            TexturePage.TextureData.Image = GMImage.FromSkiaImage(SKImage.FromBitmap(pageBmp))
-                .ConvertToFormat(TexturePage.TextureData.Image.Format);
+            TexturePage.TextureData.Image = GMImage.FromSkiaImage(SKImage.FromBitmap(pageBmp));
         }
         TargetWidth = (ushort)replaceBmp.Width;
         TargetHeight = (ushort)replaceBmp.Height;

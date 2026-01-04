@@ -1096,6 +1096,6 @@ public class GMImage
     public static GMImage FromSkiaImage(SKImage image)
     {
         SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return new GMImage(ImageFormat.RawBgra, (int)image.Width, (int)image.Height, data.ToArray());
+        return new GMImage(ImageFormat.Png, (int)image.Width, (int)image.Height, data.ToArray());
     }
 }
