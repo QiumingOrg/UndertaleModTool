@@ -850,10 +850,12 @@ public class GMImage
                     {
                         BZip2.Decompress(compressedData, uncompressedData, false);
                     }
+
                     // Convert to raw image data
                     uncompressedData.Seek(0, SeekOrigin.Begin);
                     return QoiConverter.GetImageFromStream(uncompressedData);
                 }
+            }
             case ImageFormat.Unknown:
                 throw new InvalidOperationException("Cannot convert unknown image format to raw BGRA");
         }
