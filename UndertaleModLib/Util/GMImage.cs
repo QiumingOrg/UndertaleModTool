@@ -1055,11 +1055,6 @@ public class GMImage
         return _data;
     }
 
-    public SKImage GetSkiaImage()
-    {
-        return SKImage.FromEncodedData(_data);
-    }
-
     /// <summary>
     /// Writes this image, in its current format (as seen on disk), to the current position of the specified <see cref="BinaryWriter"/>.
     /// </summary>
